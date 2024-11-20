@@ -1,0 +1,120 @@
+{
+    "userId": "user123",
+    "preferences": {
+        "email": {"enabled": true, "frequency": "daily"},
+        "sms": {"enabled": false, "frequency": "weekly"},
+        "push": {"enabled": true, "frequency": "instant"}
+    }
+}
+
+import json
+import boto3
+from botocore.exceptions import ClientError
+
+dynamodb = boto3.resource('dynamodb')
+table = dynamodb.Table('UserPreferences')
+
+def lambda_handler(event, context):
+    # Parse the event to get the HTTP method
+    method = event['httpMethod']
+    if method == 'POST':
+        return create_or_update_preferences(event)
+    elif method == 'GET':
+        return get_preferences(event)
+
+def create_or_update_preferences(event):
+    user_id = event['body']['userId']
+    preferences = event['body']['preferences']
+    try:
+        # Store or update user preferences in DynamoDB
+        table.put_item(
+            Item={
+                'userId': user_id,
+                'preferences': preferences
+            }
+        )
+        return {
+            'statusCode': 200,
+            'body': json.dumps({'message': 'Preferences updated successfully.'})
+        }
+    except ClientError as e:
+        return {
+            'statusCode': 500,
+            'body': json.dumps({'message': str(e)})
+        }
+
+def get_preferences(event):
+    user_id = event['pathParameters']['userId']
+    try:
+        # Fetch user preferences from DynamoDB
+        response = table.get_item(Key={'userId': user_id})
+        if 'Item' in response:
+            return {
+                'statusCode': 200,
+                'body': json.dumps(response['Item'])
+            }
+        else:
+            return {
+                'statusCode': 404,
+                'body': json.dumps({'message': 'User not found.'})
+            }
+    except ClientError as e:
+        return {
+            'statusCode': 500,
+            'body': json.dumps({'message': str(e)})
+        }
+
+import json
+import boto3
+
+sns = boto3.client('sns')
+
+def lambda_handler(event, context):
+    # Parse the incoming event for the user and message
+    body = json.loads(event['body'])
+    user_id = body['userId']
+    message = body['message']
+
+    # Get user preferences from DynamoDB
+    preferences = get_user_preferences(user_id)
+    if preferences is None:
+        return {
+            'statusCode': 404,
+            'body': json.dumps({'message': 'User preferences not found.'})
+        }
+
+    # Send notifications based on user preferences
+    responses = []
+    for notification_type, settings in preferences['preferences'].items():
+        if settings['enabled']:
+            response = send_notification(notification_type, user_id, message)
+            responses.append(response)
+
+    return {
+        'statusCode': 200,
+        'body': json.dumps({'message': 'Notifications sent.', 'responses': responses})
+    }
+
+def get_user_preferences(user_id):
+    # Fetch user preferences from DynamoDB (similar to the previous function)
+    # This can use a simple get_item or a query to retrieve the preferences.
+    return {
+        'preferences': {
+            'email': {'enabled': True, 'frequency': 'daily'},
+            'sms': {'enabled': False, 'frequency': 'weekly'},
+            'push': {'enabled': True, 'frequency': 'instant'}
+        }
+    }
+
+def send_notification(notification_type, user_id, message):
+    if notification_type == 'email':
+        # Use Amazon SES or other service to send email
+        pass
+    elif notification_type == 'sms':
+        # Use Amazon SNS to send SMS
+        sns.publish(PhoneNumber=user_id, Message=message)
+    elif notification_type == 'push':
+        # Push notification logic (e.g., AWS Pinpoint)
+        pass
+
+    return f"{notification_type} sent to {user_id}"
